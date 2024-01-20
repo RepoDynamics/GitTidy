@@ -1,0 +1,61 @@
+
+name: 'Package - Build'
+run-name: 'Package: Build from ${{github.ref}}'
+
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'pyproject.toml'
+
+jobs:
+
+  publish-pypi:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment:
+      name: PyPI
+    steps:
+      - name: 'Checkout repository from ${{github.ref}}'
+        uses: actions/checkout@v4
+
+      - name: 'Build sdist'
+        run: |
+          pipx run build --sdist --wheel --outdir dist/
+
+      - name: 'Upload package'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # https://github.com/marketplace/actions/pypi-publish
+        with:
+          packages-dir: dist
+          verify-metadata: false
+          verbose: true
+          print-hash: true
+          skip-existing: false
+
+  publish-testpypi:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+    environment:
+      name: TestPyPI
+    steps:
+      - name: 'Checkout repository from ${{github.ref}}'
+        uses: actions/checkout@v4
+
+      - name: 'Build sdist'
+        run: |
+          pipx run build --sdist --wheel --outdir dist/
+
+      - name: 'Upload package'
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # https://github.com/marketplace/actions/pypi-publish
+        with:
+          packages-dir: dist
+          repository-url: https://test.pypi.org/legacy/
+          verify-metadata: false
+          verbose: true
+          print-hash: true
+          skip-existing: false
