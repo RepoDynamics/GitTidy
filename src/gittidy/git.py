@@ -1,7 +1,6 @@
 import json
 from typing import Literal, Optional
 from pathlib import Path
-import subprocess
 import re
 from contextlib import contextmanager
 from loggerman import logger
