@@ -4,38 +4,39 @@ from pathlib import Path
 import subprocess
 import re
 from contextlib import contextmanager
-from actionman.logger import Logger
-
-from repodynamics import _util
+from loggerman import logger
+import pyshellman as _pyshellman
 from repodynamics.version import PEP440SemVer
+
+from gittidy import exception as _exception
 
 
 class Git:
     _COMMITTER_USERNAME = "RepoDynamicsBot"
     _COMMITTER_EMAIL = "146771514+RepoDynamicsBot@users.noreply.github.com"
 
+    @logger.sectioner("Initialize Git API")
     def __init__(
         self,
-        path_repo: str | Path = ".",
+        path: str | Path = ".",
         user: tuple[str, str] | None = None,
         user_scope: Literal["system", "global", "local", "worktree"] = "global",
-        logger: Logger | None = None,
     ):
-        self._logger = logger or Logger()
-        self._logger.h2("Initialize Git API")
-        git_available = _util.shell.run_command(["git", "version", "--build-options"], raise_command=False, logger=self._logger)
-        if not git_available:
-            self._logger.error(f"'git' is not installed. Please install 'git' and try again.")
-        path_root, err, code = _util.shell.run_command(
-            ["git", "-C", str(Path(path_repo).resolve()), "rev-parse", "--show-toplevel"],
-            raise_returncode=False,
-            raise_stderr=False,
-            logger=self._logger,
-        )
-        if code != 0:
-            self._logger.error(f"No git repository found at '{path_repo}'")
-        else:
-            self._path_root = Path(path_root).resolve()
+        try:
+            git_version = _pyshellman.run(["git", "version", "--build-options"])
+        except _pyshellman.exception.PyShellManError:
+            raise _exception.GitTidyGitNotFoundError()
+        logger.info(code_title="Git version", code=git_version.output)
+
+        try:
+            repo_root_path = _pyshellman.run(
+                ["git", "-C", str(Path(path).resolve()), "rev-parse", "--show-toplevel"]
+            )
+        except _pyshellman.exception.PyShellManError:
+            raise _exception.GitTidyNoGitRepositoryError(path)
+        self._path = Path(repo_root_path.output)
+        logger.info(code_title="Git repository path", code=self._path)
+
         if user:
             self.set_user(username=user[0], email=user[1], scope=user_scope)
         return
@@ -55,7 +56,7 @@ class Git:
         if force_with_lease:
             command.append("--force-with-lease")
         with self._temp_committer():
-            self._run(command)
+            self.run_command(command)
         return self.commit_hash_normal()
 
     def commit(
@@ -90,14 +91,14 @@ class Git:
         if stage != "none":
             flag = "-A" if stage == "all" else "-u"
             with self._temp_committer():
-                self._run(["git", "add", flag])
+                self.run_command(["git", "add", flag])
         commit_hash = None
         if allow_empty or self.has_changes(check_type="staged"):
             with self._temp_committer():
-                out, err, code = self._run(commit_cmd, raise_=False)
+                out, err, code = self.run_command(commit_cmd, raise_exit_code=False)
             if code != 0:
                 with self._temp_committer():
-                    self._run(commit_cmd)
+                    self.run_command(commit_cmd)
             commit_hash = self.commit_hash_normal()
             self._logger.success(f"Committed changes. Commit hash: {commit_hash}")
         else:
@@ -116,8 +117,8 @@ class Git:
         else:
             cmd.extend(["-a", tag, "-m", message])
         with self._temp_committer():
-            self._run(cmd)
-        out = self._run(["git", "show", tag])
+            self.run_command(cmd)
+        out = self.run_command(["git", "show", tag])
         if push_target:
             self.push(target=push_target, ref=tag)
         return out
@@ -133,8 +134,8 @@ class Git:
         """
         commands = {"staged": ["git", "diff", "--quiet", "--cached"], "unstaged": ["git", "diff", "--quiet"]}
         if check_type == "all":
-            return any(self._run(cmd, raise_=False)[2] != 0 for cmd in commands.values())
-        return self._run(commands[check_type], raise_=False)[2] != 0
+            return any(self.run_command(cmd, raise_exit_code=False)[2] != 0 for cmd in commands.values())
+        return self.run_command(commands[check_type], raise_exit_code=False)[2] != 0
 
     def changed_files(self, ref_start: str, ref_end: str) -> dict[str, list[str]]:
         """
@@ -185,7 +186,7 @@ class Git:
             "R": "renamed",
         }
         out = {}
-        changes = self._run(["git", "diff", "--name-status", ref_start, ref_end]).splitlines()
+        changes = self.run_command(["git", "diff", "--name-status", ref_start, ref_end]).splitlines()
         for change in changes:
             key, *paths = change.split("\t")
             if key in key_def:
@@ -211,7 +212,7 @@ class Git:
         Returns:
         - str: The commit hash.
         """
-        return self._run(["git", "rev-parse", f"HEAD~{parent}"])
+        return self.run_command(["git", "rev-parse", f"HEAD~{parent}"])
 
     def describe(
         self, abbrev: int | None = None, first_parent: bool = True, match: str | None = None
@@ -223,7 +224,7 @@ class Git:
             cmd.append("--first-parent")
         if match:
             cmd.extend(["--match", match])
-        out, err, code = self._run(command=cmd, raise_=False)
+        out, err, code = self.run_command(command=cmd, raise_exit_code=False)
         return out if code == 0 else None
 
     def log(
@@ -251,7 +252,7 @@ class Git:
             cmd.append(revision_range)
         if paths:
             cmd.extend(["--"] + (paths if isinstance(paths, list) else [paths]))
-        return self._run(cmd)
+        return self.run_command(cmd)
 
     def set_user(
         self,
@@ -270,9 +271,9 @@ class Git:
             raise ValueError("username and email must be either a string or None.")
         for key, val in [("name", username), ("email", email)]:
             if val is None:
-                self._run([*cmd, "--unset", f"{user_type}.{key}"])
+                self.run_command([*cmd, "--unset", f"{user_type}.{key}"])
             else:
-                self._run([*cmd, f"{user_type}.{key}", val])
+                self.run_command([*cmd, f"{user_type}.{key}", val])
         return
 
     def get_user(
@@ -288,7 +289,7 @@ class Git:
             cmd.append(f"--{scope}")
         user = []
         for key in ["name", "email"]:
-            out, err, code = self._run([*cmd, f"{user_type}.{key}"], raise_=False)
+            out, err, code = self.run_command([*cmd, f"{user_type}.{key}"], raise_exit_code=False)
             if code == 0:
                 user.append(out)
             elif code == 1 and not out:
@@ -304,7 +305,7 @@ class Git:
         exists_ok: bool = False,
         not_fast_forward_ok: bool = False,
     ):
-        remote_branches = self._run(["git", "branch", "-r"]).splitlines()
+        remote_branches = self.run_command(["git", "branch", "-r"]).splitlines()
         branch_names = []
         for remote_branch in remote_branches:
             remote_branch = remote_branch.strip()
@@ -335,7 +336,7 @@ class Git:
         refspecs = [
             f"{'+' if not_fast_forward_ok else ''}{branch_name}:{branch_name}" for branch_name in branch_names
         ]
-        self._run(["git", "fetch", remote_name, *refspecs])
+        self.run_command(["git", "fetch", remote_name, *refspecs])
         # for branch_name in branch_names:
         #     self._run(["git", "branch", "--track", branch_name, f"{remote_name}/{branch_name}"])
         # self._run(["git", "fetch", "--all"])
@@ -346,7 +347,7 @@ class Git:
         cmd = ["git", "pull"]
         if fast_forward_only:
             cmd.append("--ff-only")
-        return self._run(cmd)
+        return self.run_command(cmd)
 
     def get_commits(self, revision_range: str | None = None) -> list[dict[str, str | list[str]]]:
         """
@@ -370,7 +371,7 @@ class Git:
 
         if revision_range:
             cmd.append(revision_range)
-        out = self._run(cmd)
+        out = self.run_command(cmd)
 
         pattern = re.compile(
             rf"{re.escape(marker_start)}\n(.*?)\n(.*?)\n(.*?)\n(.*?){re.escape(marker_commit_end)}\n(.*?)(?:\n\n|$)",
@@ -394,21 +395,21 @@ class Git:
 
     def current_branch_name(self) -> str:
         """Get the name of the current branch."""
-        return self._run(["git", "branch", "--show-current"])
+        return self.run_command(["git", "branch", "--show-current"])
 
     def branch_delete(self, branch_name: str, force: bool = False):
         cmd = ["git", "branch", "-D" if force else "-d", branch_name]
-        self._run(cmd)
+        self.run_command(cmd)
         return
 
     def branch_rename(self, new_name: str, force: bool = False):
         cmd = ["git", "branch", "-M" if force else "-m", new_name]
-        self._run(cmd)
+        self.run_command(cmd)
         return
 
     def get_all_branch_names(self) -> tuple[str, list[str]]:
         """Get the name of the current branch."""
-        branches_str = self._run(["git", "branch"])
+        branches_str = self.run_command(["git", "branch"])
         branches_other = []
         branch_current = []
         for branch in branches_str.split("\n"):
@@ -433,7 +434,7 @@ class Git:
         elif orphan:
             cmd.append("--orphan")
         cmd.append(branch)
-        return self._run(cmd)
+        return self.run_command(cmd)
 
     def get_distance(self, ref_start: str, ref_end: str = "HEAD") -> int:
         """
@@ -446,7 +447,7 @@ class Git:
         Returns:
         - int: The distance between the two commits.
         """
-        return int(self._run(["git", "rev-list", "--count", f"{ref_start}..{ref_end}"]))
+        return int(self.run_command(["git", "rev-list", "--count", f"{ref_start}..{ref_end}"]))
 
     def get_tags(self) -> list[list[str]]:
         """Get a list of tags reachable from the current commit
@@ -454,7 +455,7 @@ class Git:
         This returns a list of tags ordered by the commit date (newest first).
         Each element is a list itself, containing all tags that point to the same commit.
         """
-        tags_on_branch = self._run(["git", "tag", "--merged"]).splitlines()
+        tags_on_branch = self.run_command(["git", "tag", "--merged"]).splitlines()
         output = self.log(simplify_by_decoration=True, pretty="format:%D")
         tags = []
         for line in output.splitlines():
@@ -511,7 +512,7 @@ class Git:
             }
         }
         """
-        out = self._run(["git", "remote", "-v"])
+        out = self.run_command(["git", "remote", "-v"])
         remotes = {}
         for remote in out.splitlines():
             remote_name, url, purpose_raw = remote.split()
@@ -567,13 +568,13 @@ class Git:
 
     def check_gitattributes(self):
         command = ["sh", "-c", "git ls-files | git check-attr -a --stdin | grep 'text: auto'"]
-        out = self._run(command)
+        out = self.run_command(command)
         if out:
             return False
         return True
 
     def file_at_hash(self, commit_hash: str, path: str | Path, raise_missing: bool = True) -> str | None:
-        out, err, code = self._run(["git", "show", f"{commit_hash}:{path}"], raise_=raise_missing)
+        out, err, code = self.run_command(["git", "show", f"{commit_hash}:{path}"], raise_exit_code=raise_missing)
         if err or code != 0:
             if raise_missing:
                 self._logger.error(f"Failed to get file '{path}' at commit '{commit_hash}'.", details=err)
@@ -582,7 +583,7 @@ class Git:
 
     def discard_changes(self, path: str | Path = "."):
         """Revert all uncommitted changes in the specified path, back to the state of the last commit."""
-        return self._run(["git", "checkout", "--", str(path)])
+        return self.run_command(["git", "checkout", "--", str(path)])
 
     def stash(
         self, name: str = "Stashed by RepoDynamics", include: Literal["tracked", "untracked", "all"] = "all"
@@ -608,7 +609,7 @@ class Git:
             command.extend(["save", "--include-untracked" if include == "untracked" else "--all"])
         if name:
             command.append(str(name))
-        return self._run(command)
+        return self.run_command(command)
 
     def stash_pop(self):
         """Reapply the most recently stashed changes and remove the stash from the stack.
@@ -616,24 +617,11 @@ class Git:
         This will take the changes stored in the stash and apply them back to the working directory,
         removing the stash from the stack.
         """
-        return self._run(["git", "stash", "pop"], raise_=False)
+        return self.run_command(["git", "stash", "pop"], raise_exit_code=False)
 
     @property
     def path_root(self) -> Path:
-        return self._path_root
-
-    def _run(
-        self, command: list[str], raise_: bool = True, raise_stderr: bool = False, **kwargs
-    ) -> str | tuple[str, str, int]:
-        out, err, code = _util.shell.run_command(
-            command,
-            cwd=self._path_root,
-            raise_returncode=raise_,
-            raise_stderr=raise_stderr,
-            logger=self._logger,
-            **kwargs,
-        )
-        return out if raise_ else (out, err, code)
+        return self._path
 
     @contextmanager
     def _temp_committer(self):
@@ -664,33 +652,20 @@ class Git:
             self.set_user(username=author_username, email=author_email, user_type="author", scope="local")
         return
 
-
-def run_command(
-    command: list[str],
-    cwd: Optional[str | Path] = None,
-    raise_command: bool = True,
-    raise_returncode: bool = True,
-    raise_stderr: bool = True,
-    text_output: bool = True,
-    logger: Logger | None = None,
-) -> Optional[tuple[str, str, int]]:
-    cmd_str = " ".join(command)
-    title = f"Run shell command '{cmd_str}'"
-    try:
-        process = subprocess.run(command, text=text_output, cwd=cwd, capture_output=True)
-    except FileNotFoundError:
-        logger.error(title, f"- Failed: Command '{command[0]}' not found.", raise_error=raise_command)
-        return
-    out = process.stdout.strip() if text_output else process.stdout
-    err = process.stderr.strip() if text_output else process.stderr
-    code = process.returncode
-    if code == 0 and not err:
-        logger.success(title, f"- Shell command executed successfully with following output:\n{out}")
-    else:
-        logger.error(
-            title,
-            f"Shell command failed with following outputs:\n"
-            f"Return Code: {code}\n\nError Message: {err}\n\nOutput: {out}",
-            raise_error=(code != 0 and raise_returncode) or (err and raise_stderr),
+    def run_command(
+        self,
+        command: list[str],
+        raise_exit_code: bool = True,
+        raise_stderr: bool = False,
+        text_output: bool = True,
+    ) -> _pyshellman.ShellOutput:
+        result = _pyshellman.run(
+            command=["git", *command],
+            cwd=self._path,
+            raise_execution=True,
+            raise_exit_code=raise_exit_code,
+            raise_stderr=raise_stderr,
+            text_output=text_output,
         )
-    return out, err, code
+        logger.info("Run git command", msg=result.summary, code_title="Result", code=result)
+        return result
