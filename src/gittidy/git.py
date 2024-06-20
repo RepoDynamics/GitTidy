@@ -310,7 +310,7 @@ class Git:
             cmd.append(revision_range)
         if paths:
             cmd.extend(["--"] + (paths if isinstance(paths, list) else [paths]))
-        return self.run_command(cmd).output
+        return self.run_command(cmd).output or ""
 
     @logger.sectioner("Git: Set User")
     def set_user(
