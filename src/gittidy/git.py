@@ -532,7 +532,7 @@ class Git:
         Each element is a list itself, containing all tags that point to the same commit.
         """
         logs = self.log(simplify_by_decoration=True, pretty="format:%D")
-        tags_on_branch = self.run_command(["tag", "--merged"]).output.splitlines()
+        tags_on_branch = (self.run_command(["tag", "--merged"]).output or "").splitlines()
         tags = []
         for line in logs.splitlines():
             potential_tags = line.split(", ")
