@@ -28,3 +28,19 @@ class GitTidyNoGitRepositoryError(GitTidyError):
         self.path = _Path(path).resolve()
         super().__init__(f"No Git repository found in '{self.path}' or any parent directory.")
         return
+
+
+class GitTidyInputError(GitTidyError):
+    """Error in the input arguments provided to Git methods."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        return
+
+
+class GitTidyOperationError(GitTidyError):
+    """Error in the execution of an operation."""
+
+    def __init__(self, message: str):
+        super().__init__(message)
+        return
