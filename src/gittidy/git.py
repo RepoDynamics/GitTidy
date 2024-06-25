@@ -569,7 +569,7 @@ class Git:
             }
         }
         """
-        out = self.run_command(["remote", "-v"]).output
+        out = self.run_command(["remote", "-v"]).output or ""
         remotes = {}
         for remote in out.splitlines():
             remote_name, url, purpose_raw = remote.split()
