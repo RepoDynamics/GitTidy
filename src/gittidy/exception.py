@@ -15,7 +15,7 @@ class GitTidyGitNotFoundError(GitTidyError):
 
     def __init__(
         self,
-        message: str = "Git executable not found in PATH; please install 'git' and try again."
+        message: str = "Git executable not found. Please install Git and try again."
     ):
         super().__init__(message)
         return
@@ -26,7 +26,7 @@ class GitTidyNoGitRepositoryError(GitTidyError):
 
     def __init__(self, path: str | _Path):
         self.path = _Path(path).resolve()
-        super().__init__(f"No Git repository found in '{self.path}' or any parent directory.")
+        super().__init__(f"No Git repository found at '{self.path}' or any parent directory.")
         return
 
 

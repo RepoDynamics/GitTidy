@@ -6,7 +6,7 @@ from pathlib import Path as _Path
 import re as _re
 from contextlib import contextmanager as _contextmanager
 
-from loggerman import logger
+import loggerman as _loggerman
 import pyshellman as _pyshellman
 
 from gittidy import exception as _exception
@@ -14,7 +14,6 @@ from gittidy import exception as _exception
 
 class Git:
 
-    @logger.sectioner("Initialize Git API")
     def __init__(
         self,
         path: str | _Path,
@@ -26,12 +25,17 @@ class Git:
         committer: tuple[str, str] | None = None,
         committer_scope: _Literal["system", "global", "local", "worktree"] = "local",
         committer_persistent: bool = False,
+        logger: _loggerman.Logger | None = None,
     ):
+        if logger:
+            self.logger = logger
+        else:
+            self.logger = _loggerman.create(realtime_levels=None)
+            self.logger.section("GitTidy Logs")
         try:
             git_version = _pyshellman.run(["git", "version", "--build-options"])
         except _pyshellman.exception.PyShellManError:
             raise _exception.GitTidyGitNotFoundError()
-        logger.info(code_title="Git version", code=git_version.output)
 
         try:
             repo_root_path = _pyshellman.run(
@@ -40,7 +44,6 @@ class Git:
         except _pyshellman.exception.PyShellManError:
             raise _exception.GitTidyNoGitRepositoryError(path)
         self._path = _Path(repo_root_path.output)
-        logger.info(code_title="Git repository path", code=self._path)
 
         if user:
             self.set_user(username=user[0], email=user[1], scope=user_scope)
@@ -96,7 +99,6 @@ class Git:
         with self._temporary_credentials():
             return self._run_command(command, raise_exit_code, raise_stderr, text_output)
 
-    @logger.sectioner("Git: Push")
     def push(
         self,
         target: str = "",
@@ -119,7 +121,6 @@ class Git:
         self.run_command(command=command, needs_credentials=True)
         return
 
-    @logger.sectioner("Git: Commit")
     def commit(
         self,
         message: str = "",
@@ -154,11 +155,8 @@ class Git:
         if allow_empty or self.has_changes(check_type="staged"):
             self.run_command(commit_cmd, needs_credentials=True)
             commit_hash = self.commit_hash_normal()
-        else:
-            logger.info(f"No changes to commit.")
         return commit_hash
 
-    @logger.sectioner("Git: Create Tag")
     def create_tag(
         self,
         tag: str,
@@ -176,7 +174,6 @@ class Git:
             self.push(target=push_target, ref=tag)
         return out
 
-    @logger.sectioner("Git: Check Changes")
     def has_changes(self, check_type: _Literal["staged", "unstaged", "all"] = "all") -> bool:
         """Checks for git changes.
 
@@ -191,7 +188,6 @@ class Git:
             return any(self.run_command(cmd, raise_exit_code=False).code != 0 for cmd in commands.values())
         return self.run_command(commands[check_type], raise_exit_code=False).code != 0
 
-    @logger.sectioner("Git: Get Changed Files")
     def changed_files(self, ref_start: str, ref_end: str) -> dict[str, list[str]]:
         """
         Get all files that have changed between two commits, and the type of changes.
@@ -249,7 +245,7 @@ class Git:
                 continue
             key, similarity = key[0], int(key[1:])
             if key not in ["C", "R"]:
-                logger.error("Unknown file change type", change)
+                raise ValueError(f"Unknown file change type: {change}")
             out_key = key_def[key]
             if similarity != 100:
                 out_key += "_modified"
@@ -257,7 +253,6 @@ class Git:
             out.setdefault(f"{out_key}_to", []).append(paths[1])
         return out
 
-    @logger.sectioner("Git: Get Commit Hash")
     def commit_hash_normal(self, parent: int = 0) -> str | None:
         """
         Get the commit hash of the current commit.
@@ -270,7 +265,6 @@ class Git:
         """
         return self.run_command(["rev-parse", f"HEAD~{parent}"]).output
 
-    @logger.sectioner("Git: Describe")
     def describe(
         self, abbrev: int | None = None, first_parent: bool = True, match: str | None = None
     ) -> str | None:
@@ -284,7 +278,6 @@ class Git:
         result = self.run_command(command=cmd, raise_exit_code=False)
         return result.output if result.code == 0 else None
 
-    @logger.sectioner("Git: Log")
     def log(
         self,
         number: int | None = None,
@@ -312,7 +305,6 @@ class Git:
             cmd.extend(["--"] + (paths if isinstance(paths, list) else [paths]))
         return self.run_command(cmd).output or ""
 
-    @logger.sectioner("Git: Set User")
     def set_user(
         self,
         username: str | None = "",
@@ -335,7 +327,6 @@ class Git:
                 self.run_command([*cmd, f"{user_type}.{key}", val])
         return
 
-    @logger.sectioner("Git: Get User")
     def get_user(
         self,
         user_type: _Literal["user", "author", "committer"] = "user",
@@ -359,7 +350,6 @@ class Git:
                     f"Failed to get {user_type}.{key}")
         return tuple(user)
 
-    @logger.sectioner("Git: Fetch Remotes by Pattern")
     def fetch_remote_branches_by_pattern(
         self,
         branch_pattern: _re.Pattern | None = None,
@@ -383,7 +373,6 @@ class Git:
         )
         return
 
-    @logger.sectioner("Git: Fetch Remotes by Name")
     def fetch_remote_branches_by_name(
         self,
         branch_names: str | list[str],
@@ -407,7 +396,6 @@ class Git:
         # self._run(["git", "pull", "--all"])
         return
 
-    @logger.sectioner("Git: Pull")
     def pull(self, fast_forward_only: bool = True) -> None:
         cmd = ["pull"]
         if fast_forward_only:
@@ -415,7 +403,6 @@ class Git:
         self.run_command(cmd)
         return
 
-    @logger.sectioner("Git: Get Commits")
     def get_commits(self, revision_range: str | None = None) -> list[dict[str, str | list[str]]]:
         """
         Get a list of commits.
@@ -446,8 +433,6 @@ class Git:
         )
 
         matches = pattern.findall(result.output)
-        logger.info(f"Found {len(matches)} commits.")
-        logger.debug("Commits", matches)
 
         commits = []
         for match in matches:
@@ -461,24 +446,20 @@ class Git:
             commits.append(commit_info)
         return commits
 
-    @logger.sectioner("Git: Get Current Branch Name")
     def current_branch_name(self) -> str:
         """Get the name of the current branch."""
         return self.run_command(["branch", "--show-current"]).output
 
-    @logger.sectioner("Git: Delete Branch")
     def branch_delete(self, branch_name: str, force: bool = False) -> None:
         cmd = ["branch", "-D" if force else "-d", branch_name]
         self.run_command(cmd)
         return
 
-    @logger.sectioner("Git: Rename Branch")
     def branch_rename(self, new_name: str, force: bool = False) -> None:
         cmd = ["branch", "-M" if force else "-m", new_name]
         self.run_command(cmd)
         return
 
-    @logger.sectioner("Git: Get All Branch Names")
     def get_all_branch_names(self) -> tuple[str, list[str]]:
         """Get the name of all branches."""
         result = self.run_command(["branch"])
@@ -496,7 +477,6 @@ class Git:
             raise _exception.GitTidyOperationError("More than one current branch found.")
         return branch_current[0], branches_other
 
-    @logger.sectioner("Git: Checkout Branch")
     def checkout(self, branch: str, create: bool = False, reset: bool = False, orphan: bool = False) -> None:
         """Checkout a branch."""
         cmd = ["checkout"]
@@ -510,7 +490,6 @@ class Git:
         self.run_command(cmd)
         return
 
-    @logger.sectioner("Git: Get Distance To Ref")
     def get_distance(self, ref_start: str, ref_end: str = "HEAD") -> int:
         """
         Get the distance between two commits.
@@ -524,7 +503,6 @@ class Git:
         """
         return int(self.run_command(["rev-list", "--count", f"{ref_start}..{ref_end}"]).output)
 
-    @logger.sectioner("Git: Get Tags")
     def get_tags(self) -> list[list[str]]:
         """Get a list of tags reachable from the current commit
 
@@ -547,7 +525,6 @@ class Git:
                         tags[-1].append(tag)
         return tags
 
-    @logger.sectioner("Git: Get Remotes")
     def get_remotes(self) -> dict[str, dict[str, str]]:
         """
         Remote URLs of the git repository.
@@ -582,7 +559,6 @@ class Git:
             remote_dict[purpose] = url
         return remotes
 
-    @logger.sectioner("Git: Get Remote Repo Name")
     def get_remote_repo_name(
         self,
         remote_name: str = "origin",
@@ -595,8 +571,7 @@ class Git:
             pattern = _re.compile(r"github\.com[/:]([\w\-]+)/([\w\-.]+?)(?:\.git)?$")
             match = pattern.search(url)
             if not match:
-                logger.info(f"Failed to extract repo name from URL '{url}'.")
-                return None
+                return
             owner, repo = match.groups()[0:2]
             return owner, repo
 
@@ -626,7 +601,6 @@ class Git:
                             return repo_name
         return
 
-    @logger.sectioner("Git: Check .gitattributes")
     def check_gitattributes(self) -> bool:
         command = ["sh", "-c", "git ls-files | git check-attr -a --stdin | grep 'text: auto'"]
         result = _pyshellman.run(
@@ -637,10 +611,8 @@ class Git:
             raise_stderr=True,
             text_output=True,
         )
-        logger.info("Run command", msg=result.summary, code_title="Result", code=result)
         return not result.output
 
-    @logger.sectioner("Git: Get File at Hash")
     def file_at_hash(self, commit_hash: str, path: str | _Path, raise_missing: bool = True) -> str | None:
         result = self.run_command(["show", f"{commit_hash}:{path}"], raise_exit_code=raise_missing)
         if result.error or result.code != 0:
@@ -651,13 +623,11 @@ class Git:
             return
         return result.output
 
-    @logger.sectioner("Git: Discard Changes")
     def discard_changes(self, path: str | _Path = ".") -> None:
         """Revert all uncommitted changes in the specified path, back to the state of the last commit."""
         self.run_command(["checkout", "--", str(path)])
         return
 
-    @logger.sectioner("Git: Stash")
     def stash(
         self, include: _Literal["tracked", "untracked", "all"] = "all", name: str = "Stashed by GitTidy"
     ) -> None:
@@ -685,7 +655,6 @@ class Git:
         self.run_command(command)
         return
 
-    @logger.sectioner("Git: Pop Stash")
     def stash_pop(self) -> None:
         """Reapply the most recently stashed changes and remove the stash from the stack.
 
@@ -710,7 +679,7 @@ class Git:
             raise_stderr=raise_stderr,
             text_output=text_output,
         )
-        logger.info("Execute git command", msg=result.summary, code_title="Result", code=result)
+        self.logger.info("Execute git command", str(result))
         return result
 
     @_contextmanager
