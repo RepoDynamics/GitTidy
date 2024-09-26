@@ -1,2 +1,2 @@
-LoggerMan == 0.0.0.dev39
+LoggerMan == 0.0.0.dev40
 PyShellMan == 0.0.0.dev2
