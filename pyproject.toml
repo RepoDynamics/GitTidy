@@ -17,10 +17,12 @@ namespaces = true
 # ----------------------------------------- Project Metadata -------------------------------------
 #
 [project]
-version = "0.0.0.dev33"
+version = "0.0.0.dev34"
 name = "GitTidy"
 requires-python = ">=3.10"
 dependencies = [
-    "LoggerMan == 0.0.0.dev41",
-    "PyShellMan == 0.0.0.dev2",
+    "LoggerMan == 0.0.0.dev42",
+    "PyShellMan == 0.0.0.dev3",
+    "MDit == 0.0.0.dev14",
+    "ExceptionMan == 0.0.0.dev14",
 ]
