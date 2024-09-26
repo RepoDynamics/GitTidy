@@ -17,7 +17,7 @@ namespaces = true
 # ----------------------------------------- Project Metadata -------------------------------------
 #
 [project]
-version = "0.0.0.dev34"
+version = "0.0.0.dev35"
 name = "GitTidy"
 requires-python = ">=3.10"
 dependencies = [
