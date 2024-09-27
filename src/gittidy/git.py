@@ -72,7 +72,7 @@ class Git:
         )
         if not output_repo_path.succeeded:
             raise _exception.GitTidyNoGitRepositoryError(output=output_repo_path, path=path)
-        self._path = _Path(output_repo_path.out)
+        self._path = _Path(output_repo_path.out).resolve()
 
         if user:
             self.set_user(username=user[0], email=user[1], scope=user_scope)
