@@ -184,6 +184,7 @@ class Git:
             command=command,
             needs_credentials=True,
             log_title="Git: Push",
+            stack_up=1,
         )
         return
 
@@ -210,6 +211,7 @@ class Git:
                 ["add", "-A" if stage == "all" else "-u"],
                 needs_credentials=True,
                 log_title="Git: Stage Changes",
+                stack_up=1,
             )
         commit_cmd = ["commit"]
         if amend:
@@ -223,7 +225,12 @@ class Git:
                 commit_cmd.extend(["-m", msg_line])
         commit_hash = None
         if allow_empty or self.has_changes(check_type="staged"):
-            self.run_command(commit_cmd, needs_credentials=True, log_title="Git: Commit Changes")
+            self.run_command(
+                commit_cmd,
+                needs_credentials=True,
+                log_title="Git: Commit Changes",
+                stack_up=1,
+            )
             commit_hash = self.commit_hash_normal()
         return commit_hash
 
@@ -238,8 +245,8 @@ class Git:
             cmd.append(tag)
         else:
             cmd.extend(["-a", tag, "-m", message])
-        self.run_command(cmd, needs_credentials=True, log_title="Git: Create Tag")
-        out = self.run_command(["show", tag], log_title="Git: Show Tag").out
+        self.run_command(cmd, needs_credentials=True, log_title="Git: Create Tag", stack_up=1)
+        out = self.run_command(["show", tag], log_title="Git: Show Tag", stack_up=1).out
         if push_target:
             self.push(target=push_target, ref=tag)
         return out
@@ -261,6 +268,7 @@ class Git:
                     raise_exit_code=False,
                     log_title=f"Git: Check {cmd_type} changes",
                     log_level_exit_code=self._shell_runner.log_level_success,
+                    stack_up=1,
                 ).code != 0 for cmd_type, cmd in commands.items()
             )
         return self.run_command(
@@ -268,6 +276,7 @@ class Git:
             raise_exit_code=False,
             log_level_exit_code=self._shell_runner.log_level_success,
             log_title=f"Git: Check {check_type} changes",
+            stack_up=1,
         ).code != 0
 
     def changed_files(self, ref_start: str, ref_end: str) -> dict[str, list[str]]:
@@ -322,6 +331,7 @@ class Git:
         changes = self.run_command(
             ["diff", "--name-status", ref_start, ref_end],
             log_title="Git: Get Changed Files",
+            stack_up=1,
         ).out.splitlines()
         for change in changes:
             key, *paths = change.split("\t")
@@ -351,6 +361,7 @@ class Git:
         return self.run_command(
             ["rev-parse", f"HEAD~{parent}"],
             log_title="Git: Get Commit Hash",
+            stack_up=1,
         ).out
 
     def describe(
@@ -363,7 +374,7 @@ class Git:
             cmd.append("--first-parent")
         if match:
             cmd.extend(["--match", match])
-        result = self.run_command(command=cmd, raise_exit_code=False, log_title="Git: Describe")
+        result = self.run_command(command=cmd, raise_exit_code=False, log_title="Git: Describe", stack_up=1)
         return result.out if result.code == 0 else None
 
     def log(
@@ -391,7 +402,7 @@ class Git:
             cmd.append(revision_range)
         if paths:
             cmd.extend(["--"] + (paths if isinstance(paths, list) else [paths]))
-        return self.run_command(cmd, log_title=f"Git: Log").out or ""
+        return self.run_command(cmd, log_title=f"Git: Log", stack_up=1).out or ""
 
     def set_user(
         self,
@@ -413,11 +424,13 @@ class Git:
                 self.run_command(
                     [*cmd, "--unset", f"{user_type}.{key}"],
                     log_title=f"Git: Unset {user_type} {key}",
+                    stack_up=1,
                 )
             elif val:
                 self.run_command(
                     [*cmd, f"{user_type}.{key}", val],
                     log_title=f"Git: Set {user_type} {key}",
+                    stack_up=1,
                 )
         return
 
@@ -438,6 +451,7 @@ class Git:
                 [*cmd, f"{user_type}.{key}"],
                 raise_exit_code=False,
                 log_title=f"Git: Get {user_type} {key}",
+                stack_up=1,
             )
             if result.code == 0:
                 user.append(result.out)
@@ -458,6 +472,7 @@ class Git:
         remote_branches = self.run_command(
             ["branch", "-r"],
             log_title="Git: List Remote Branches",
+            stack_up=1,
         ).out.splitlines()
         branch_names = []
         for remote_branch in remote_branches:
@@ -490,7 +505,11 @@ class Git:
         refspecs = [
             f"{'+' if not_fast_forward_ok else ''}{branch_name}:{branch_name}" for branch_name in branch_names
         ]
-        self.run_command(["fetch", remote_name, *refspecs], log_title="Git: Fetch Remote Branches")
+        self.run_command(
+            ["fetch", remote_name, *refspecs],
+            log_title="Git: Fetch Remote Branches",
+            stack_up=1,
+        )
         # for branch_name in branch_names:
         #     self._run(["git", "branch", "--track", branch_name, f"{remote_name}/{branch_name}"])
         # self._run(["git", "fetch", "--all"])
@@ -501,7 +520,7 @@ class Git:
         cmd = ["pull"]
         if fast_forward_only:
             cmd.append("--ff-only")
-        self.run_command(cmd, log_title="Git: Pull")
+        self.run_command(cmd, log_title="Git: Pull", stack_up=1)
         return
 
     def get_commits(self, revision_range: str | None = None) -> list[dict[str, str | list[str]]]:
@@ -526,7 +545,7 @@ class Git:
 
         if revision_range:
             cmd.append(revision_range)
-        result = self.run_command(cmd, log_title="Git: Get Commits")
+        result = self.run_command(cmd, log_title="Git: Get Commits", stack_up=1)
 
         pattern = _re.compile(
             rf"{_re.escape(marker_start)}\n(.*?)\n(.*?)\n(.*?)\n(.*?){_re.escape(marker_commit_end)}\n(.*?)(?:\n\n|$)",
@@ -549,21 +568,25 @@ class Git:
 
     def current_branch_name(self) -> str:
         """Get the name of the current branch."""
-        return self.run_command(["branch", "--show-current"], log_title="Git: Show Current Branch").out
+        return self.run_command(
+            ["branch", "--show-current"],
+            log_title="Git: Show Current Branch",
+            stack_up=1,
+        ).out
 
     def branch_delete(self, branch_name: str, force: bool = False) -> None:
         cmd = ["branch", "-D" if force else "-d", branch_name]
-        self.run_command(cmd, log_title="Git: Delete Branch")
+        self.run_command(cmd, log_title="Git: Delete Branch", stack_up=1)
         return
 
     def branch_rename(self, new_name: str, force: bool = False) -> None:
         cmd = ["branch", "-M" if force else "-m", new_name]
-        self.run_command(cmd, log_title="Git: Rename Branch")
+        self.run_command(cmd, log_title="Git: Rename Branch", stack_up=1)
         return
 
     def get_all_branch_names(self) -> tuple[str, list[str]]:
         """Get the name of all branches."""
-        result = self.run_command(["branch"], log_title="Git: Get Branch Names")
+        result = self.run_command(["branch"], log_title="Git: Get Branch Names", stack_up=1)
         branches_other = []
         branch_current = []
         for branch in result.out.split("\n"):
@@ -588,7 +611,7 @@ class Git:
         elif orphan:
             cmd.append("--orphan")
         cmd.append(branch)
-        self.run_command(cmd, log_title="Git: Checkout Branch")
+        self.run_command(cmd, log_title="Git: Checkout Branch", stack_up=1)
         return
 
     def get_distance(self, ref_start: str, ref_end: str = "HEAD") -> int:
@@ -606,6 +629,7 @@ class Git:
             self.run_command(
                 ["rev-list", "--count", f"{ref_start}..{ref_end}"],
                 log_title="Git: Get Distance",
+                stack_up=1,
             ).out
         )
 
@@ -620,6 +644,7 @@ class Git:
             self.run_command(
                 ["tag", "--merged"],
                 log_title="Git: Get Tags on Branch",
+                stack_up=1,
             ).out or ""
         ).splitlines()
         tags = []
@@ -657,7 +682,7 @@ class Git:
             }
         }
         """
-        out = self.run_command(["remote", "-v"], log_title="Git: Get Remotes").out or ""
+        out = self.run_command(["remote", "-v"], log_title="Git: Get Remotes", stack_up=1).out or ""
         remotes = {}
         for remote in out.splitlines():
             remote_name, url, purpose_raw = remote.split()
@@ -728,7 +753,8 @@ class Git:
         result = self.run_command(
             ["show", f"{commit_hash}:{path}"],
             log_title="Git: Get File at Commit",
-            raise_exit_code=raise_missing
+            raise_exit_code=raise_missing,
+            stack_up=1,
         )
         if result.err or result.code != 0:
             if raise_missing:
@@ -740,7 +766,7 @@ class Git:
 
     def discard_changes(self, path: str | _Path = ".") -> None:
         """Revert all uncommitted changes in the specified path, back to the state of the last commit."""
-        self.run_command(["checkout", "--", str(path)], log_title="Git: Discard Changes")
+        self.run_command(["checkout", "--", str(path)], log_title="Git: Discard Changes", stack_up=1)
         return
 
     def stash(
@@ -767,7 +793,7 @@ class Git:
             command.extend(["save", "--include-untracked" if include == "untracked" else "--all"])
         if name:
             command.append(str(name))
-        self.run_command(command, log_title="Git: Stash Changes")
+        self.run_command(command, log_title="Git: Stash Changes", stack_up=1)
         return
 
     def stash_pop(self) -> None:
@@ -776,7 +802,13 @@ class Git:
         This will take the changes stored in the stash and apply them back to the working directory,
         removing the stash from the stack.
         """
-        self.run_command(["stash", "pop"], log_title="Git: Pop Stash", raise_exit_code=False)
+        self.run_command(
+            ["stash", "pop"],
+            log_title="Git: Pop Stash",
+            raise_exit_code=False,
+            log_level_exit_code=self._shell_runner.log_level_stderr,
+            stack_up=1,
+        )
         return
 
     @_contextmanager
