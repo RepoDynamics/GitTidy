@@ -251,7 +251,11 @@ class Git:
             self.push(target=push_target, ref=tag)
         return out
 
-    def has_changes(self, check_type: _Literal["staged", "unstaged", "all"] = "all") -> bool:
+    def has_changes(
+        self,
+        check_type: _Literal["staged", "unstaged", "all"] = "all",
+        path: str | None = None,
+    ) -> bool:
         """Checks for git changes.
 
         Parameters:
@@ -261,6 +265,8 @@ class Git:
         - bool: True if changes are detected, False otherwise.
         """
         commands = {"staged": ["diff", "--quiet", "--cached"], "unstaged": ["diff", "--quiet"]}
+        if path:
+            commands = {k: [*v, path] for k, v in commands.items()}
         if check_type == "all":
             return any(
                 self.run_command(
@@ -278,6 +284,34 @@ class Git:
             log_title=f"Git: Check {check_type} changes",
             stack_up=1,
         ).code != 0
+
+    def restore(
+        self,
+        path: str,
+        change_type: _Literal["staged", "unstaged", "all"] = "all",
+        source: str | None = None,
+    ):
+        """Restore changes in git.
+
+        Parameters:
+        - change_type (str): Can be 'staged', 'unstaged', or 'all'. Default is 'all'.
+        """
+        cmd = ["restore", "--progress"]
+        if source:
+            cmd.extend(["--source", source])
+        if change_type == "all":
+            cmd.extend(["--staged", "--worktree"])
+        elif change_type == "staged":
+            cmd.append("--staged")
+        else:
+            cmd.append("--worktree")
+        cmd.append(path)
+        self.run_command(
+            cmd,
+            log_title="Git: Restore Changes",
+            stack_up=1,
+        )
+        return
 
     def changed_files(self, ref_start: str, ref_end: str) -> dict[str, list[str]]:
         """
