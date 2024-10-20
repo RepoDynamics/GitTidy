@@ -1,6 +1,5 @@
 from __future__ import annotations as _annotations
 
-from tkinter.tix import Shell
 from typing import TYPE_CHECKING as _TYPE_CHECKING
 from pathlib import Path as _Path
 from functools import partial as _partial
