@@ -1,4 +1,4 @@
-LoggerMan == 0.0.0.dev69
-PyShellMan == 0.0.0.dev29
-MDit == 0.0.0.dev39
-ExceptionMan == 0.0.0.dev39
+LoggerMan == 0.0.0.dev70
+PyShellMan == 0.0.0.dev30
+MDit == 0.0.0.dev40
+ExceptionMan == 0.0.0.dev40

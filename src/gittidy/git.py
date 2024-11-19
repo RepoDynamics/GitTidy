@@ -1,6 +1,7 @@
 """Git API."""
 from __future__ import annotations as _annotations
 
+import datetime as _datetime
 from typing import Literal as _Literal, TYPE_CHECKING as _TYPE_CHECKING
 from pathlib import Path as _Path
 import re as _re
@@ -397,6 +398,15 @@ class Git:
             log_title="Git: Get Commit Hash",
             stack_up=1,
         ).out
+
+    def commit_date_latest(self) -> _datetime.datetime:
+        # Run the git command to get the commit date
+        date_str = self.run_command(
+            ["log", "-1", "--format=%cd"],
+            log_title="Git: Get Latest Commit Date",
+            stack_up=1,
+        ).out.strip()
+        return _datetime.datetime.strptime(date_str, "%a %b %d %H:%M:%S %Y %z")
 
     def describe(
         self, abbrev: int | None = None, first_parent: bool = True, match: str | None = None
