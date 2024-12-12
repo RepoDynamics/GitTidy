@@ -239,7 +239,7 @@ class Git:
         self,
         tag: str,
         message: str = "",
-        push_target: str = "origin",
+        push_target: str | None = "origin",
     ):
         cmd = ["tag"]
         if not message:
@@ -251,6 +251,28 @@ class Git:
         if push_target:
             self.push(target=push_target, ref=tag)
         return out
+
+    def delete_tag(
+        self,
+        tag: str,
+        push_target: str | None = "origin",
+        raise_nonexistent: bool = True,
+    ) -> None:
+        nonexistent = self.run_command(
+            ["tag", "-d", tag],
+            needs_credentials=True,
+            log_title=f"Git: Delete Local Tag {tag}",
+            raise_exit_code=raise_nonexistent,
+            stack_up=1
+        ).code
+        if push_target and not nonexistent:
+            self.run_command(
+                ["push", push_target, "--delete", tag],
+                needs_credentials=True,
+                log_title=f"Git: Delete Remote Tag {tag}",
+                stack_up=1,
+            )
+        return
 
     def has_changes(
         self,
