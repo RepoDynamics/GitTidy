@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
   push:
     paths:
-      - 'pyproject.toml'
+      - 'pkg/pyproject.toml'
 
 jobs:
 
@@ -23,13 +23,14 @@ jobs:
 
       - name: 'Build sdist'
         run: |
+          cd pkg
           pipx run build --sdist --wheel --outdir dist/
 
       - name: 'Upload package'
         uses: pypa/gh-action-pypi-publish@release/v1
         # https://github.com/marketplace/actions/pypi-publish
         with:
-          packages-dir: dist
+          packages-dir: pkg/dist
           verify-metadata: false
           verbose: true
           print-hash: true
@@ -47,13 +48,14 @@ jobs:
 
       - name: 'Build sdist'
         run: |
+          cd pkg
           pipx run build --sdist --wheel --outdir dist/
 
       - name: 'Upload package'
         uses: pypa/gh-action-pypi-publish@release/v1
         # https://github.com/marketplace/actions/pypi-publish
         with:
-          packages-dir: dist
+          packages-dir: pkg/dist
           repository-url: https://test.pypi.org/legacy/
           verify-metadata: false
           verbose: true
