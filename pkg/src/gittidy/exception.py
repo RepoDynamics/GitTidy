@@ -93,7 +93,11 @@ class GitTidyInputError(GitTidyError):
     """Error in the input arguments provided to Git methods."""
 
     def __init__(self, message: str):
-        super().__init__(message)
+        super().__init__(
+            title="Git Input Error",
+            intro="Error in the input arguments provided to Git methods.",
+            details=message
+        )
         return
 
 
