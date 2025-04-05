@@ -3,6 +3,7 @@ from __future__ import annotations as _annotations
 
 import datetime as _datetime
 from typing import Literal as _Literal, TYPE_CHECKING as _TYPE_CHECKING
+import os as _os
 from pathlib import Path as _Path
 import re as _re
 from contextlib import contextmanager as _contextmanager
@@ -17,19 +18,20 @@ if _TYPE_CHECKING:
     LogLevel = Literal["debug", "success", "info", "notice", "warning", "error", "critical"]
 
 
+__all__ = ["Git"]
+
+
 class Git:
 
     def __init__(
         self,
         path: str | _Path,
         user: tuple[str, str] | None = None,
-        user_scope: Literal["system", "global", "local", "worktree"] = "global",
+        user_scope: Literal["system", "global", "local", "worktree", "process"] = "process",
         author: tuple[str, str] | None = None,
-        author_scope: Literal["system", "global", "local", "worktree"] = "local",
-        author_persistent: bool = False,
+        author_scope: Literal["system", "global", "local", "worktree", "process"] = "process",
         committer: tuple[str, str] | None = None,
-        committer_scope: Literal["system", "global", "local", "worktree"] = "local",
-        committer_persistent: bool = False,
+        committer_scope: Literal["system", "global", "local", "worktree", "process"] = "process",
         raise_execution: bool = True,
         raise_exit_code: bool = True,
         raise_stderr: bool = False,
@@ -75,40 +77,18 @@ class Git:
             raise _exception.GitTidyNoGitRepositoryError(output=output_repo_path, path=path)
         self._path = _Path(output_repo_path.out).resolve()
 
-        if user:
-            self.set_user(username=user[0], email=user[1], scope=user_scope)
-        if author:
-            self._author_username, self._author_email = author
-            self._author_scope = author_scope
-            self._author_persistent = author_persistent
-            if author_persistent:
+        for user_type, user_data, user_scope in (
+            ("user", user, user_scope),
+            ("author", author, author_scope),
+            ("committer", committer, committer_scope),
+        ):
+            if user_data:
                 self.set_user(
-                    username=self._author_username,
-                    email=self._author_email,
-                    user_type="author",
-                    scope=self._author_scope
+                    name=user_data[0],
+                    email=user_data[1],
+                    typ=user_type,
+                    scope=user_scope,
                 )
-            else:
-                self._original_author_username, self._original_author_email = self.get_user(
-                    user_type="author", scope=author_scope
-                )
-        else:
-            self._author_persistent = True
-
-        if committer:
-            self._committer_username, self._committer_email = committer
-            self._committer_scope = committer_scope
-            self._committer_persistent = committer_persistent
-            if committer_persistent:
-                self.set_user(
-                    username=committer[0], email=committer[1], user_type="committer", scope=committer_scope
-                )
-            else:
-                self._original_committer_username, self._original_committer_email = self.get_user(
-                    user_type="committer", scope=committer_scope
-                )
-        else:
-            self._committer_persistent = True
         return
 
     @property
@@ -118,7 +98,6 @@ class Git:
     def run_command(
         self,
         command: list[str],
-        needs_credentials: bool = False,
         log_title: str | None = None,
         raise_execution: bool | None = None,
         raise_exit_code: bool | None = None,
@@ -153,14 +132,7 @@ class Git:
                 raise _exception.GitTidyNonZeroGitExitCodeError(e) from None
             except _pyshellman.exception.PyShellManStderrError as e:
                 raise _exception.GitTidyGitStderrError(e) from None
-
-        if needs_credentials:
-            with self._temporary_credentials():
-                result = run()
-        else:
-            result = run()
-        return result
-
+        return run()
 
     def push(
         self,
@@ -183,7 +155,6 @@ class Git:
             command.append("--force-with-lease")
         self.run_command(
             command=command,
-            needs_credentials=True,
             log_title="Git: Push",
             stack_up=1,
         )
@@ -210,7 +181,6 @@ class Git:
         if stage != "none":
             self.run_command(
                 ["add", "-A" if stage == "all" else "-u"],
-                needs_credentials=True,
                 log_title="Git: Stage Changes",
                 stack_up=1,
             )
@@ -228,7 +198,6 @@ class Git:
         if allow_empty or self.has_changes(check_type="staged"):
             self.run_command(
                 commit_cmd,
-                needs_credentials=True,
                 log_title="Git: Commit Changes",
                 stack_up=1,
             )
@@ -246,7 +215,7 @@ class Git:
             cmd.append(tag)
         else:
             cmd.extend(["-a", tag, "-m", message])
-        self.run_command(cmd, needs_credentials=True, log_title="Git: Create Tag", stack_up=1)
+        self.run_command(cmd, log_title="Git: Create Tag", stack_up=1)
         out = self.run_command(["show", tag], log_title="Git: Show Tag", stack_up=1).out
         if push_target:
             self.push(target=push_target, ref=tag)
@@ -260,7 +229,6 @@ class Git:
     ) -> None:
         nonexistent = self.run_command(
             ["tag", "-d", tag],
-            needs_credentials=True,
             log_title=f"Git: Delete Local Tag {tag}",
             raise_exit_code=raise_nonexistent,
             stack_up=1
@@ -268,7 +236,6 @@ class Git:
         if push_target and not nonexistent:
             self.run_command(
                 ["push", push_target, "--delete", tag],
-                needs_credentials=True,
                 log_title=f"Git: Delete Remote Tag {tag}",
                 stack_up=1,
             )
@@ -472,51 +439,89 @@ class Git:
 
     def set_user(
         self,
-        username: str | None = "",
+        name: str | None = "",
         email: str | None = "",
-        user_type: _Literal["user", "author", "committer"] = "user",
-        scope: _Literal["system", "global", "local", "worktree"] | None = "global",
+        typ: _Literal["user", "author", "committer"] = "user",
+        scope: _Literal["system", "global", "local", "worktree", "process"] | None = "process",
     ) -> None:
         """
         Set the git username and email.
         """
+        def get_env_var_names(config_type: Literal["name", "email"]) -> list[str]:
+            env_vars_names = []
+            if typ in ("user", "author"):
+                env_vars_names.append(f"GIT_AUTHOR_{config_type.upper()}")
+            if typ in ("user", "committer"):
+                env_vars_names.append(f"GIT_COMMITTER_{config_type.upper()}")
+            return env_vars_names
+
+        if not ((name is None or isinstance(name, str)) and (email is None or isinstance(email, str))):
+            raise _exception.GitTidyInputError("'username' and 'email' must be either a string or None.")
+        if name is None and email is None:
+            raise _exception.GitTidyInputError("Both 'username' and 'email' cannot be None.")
+        if typ not in ["user", "author", "committer"]:
+            raise _exception.GitTidyInputError("'user_type' must be one of 'user', 'author', or 'committer'.")
+        if scope and scope not in ["system", "global", "local", "worktree", "process"]:
+            raise _exception.GitTidyInputError("'scope' must be one of 'system', 'global', 'local', 'worktree', 'process', or None.")
+
+        if scope == "process":
+            # Set env vars: https://git-scm.com/book/en/v2/Git-Internals-Environment-Variables
+            for config_name, config in (("name", name), ("email", email)):
+                if config is None:
+                    continue
+                env_vars_names = get_env_var_names(config_name)
+                for env_var_name in env_vars_names:
+                    if config:
+                        _os.environ[env_var_name] = config
+                    else:
+                        _os.environ.pop(env_var_name, None)
+            return
+
         cmd = ["config"]
         if scope:
             cmd.append(f"--{scope}")
-        if not ((username is None or isinstance(username, str)) and (email is None or isinstance(email, str))):
-            raise _exception.GitTidyInputError("'username' and 'email' must be either a string or None.")
-        for key, val in [("name", username), ("email", email)]:
+        for key, val in [("name", name), ("email", email)]:
             if val is None:
+                continue
+            if val == "":
                 self.run_command(
-                    [*cmd, "--unset", f"{user_type}.{key}"],
-                    log_title=f"Git: Unset {user_type} {key}",
+                    [*cmd, "--unset", f"{typ}.{key}"],
+                    log_title=f"Git: Unset {typ} {key}",
                     stack_up=1,
                 )
-            elif val:
+            else:
                 self.run_command(
-                    [*cmd, f"{user_type}.{key}", val],
-                    log_title=f"Git: Set {user_type} {key}",
+                    [*cmd, f"{typ}.{key}", val],
+                    log_title=f"Git: Set {typ} {key}",
                     stack_up=1,
                 )
         return
 
     def get_user(
         self,
-        user_type: _Literal["user", "author", "committer"] = "user",
-        scope: _Literal["system", "global", "local", "worktree"] | None = None,
+        typ: _Literal["user", "author", "committer"] = "user",
+        scope: _Literal["system", "global", "local", "worktree", "process"] | None = None,
     ) -> tuple[str | None, str | None]:
         """
         Get the git username and email.
         """
+        if typ == "user" and scope == "process":
+            raise _exception.GitTidyInputError("'scope' cannot be 'process' when 'typ' is 'user'.")
+
+        if scope == "process":
+            name = _os.environ.get(f"GIT_{typ.upper()}_NAME")
+            email = _os.environ.get(f"GIT_{typ.upper()}_EMAIL")
+            return name, email
+
         cmd = ["config"]
         if scope:
             cmd.append(f"--{scope}")
         user = []
         for key in ["name", "email"]:
             result = self.run_command(
-                [*cmd, f"{user_type}.{key}"],
+                [*cmd, f"{typ}.{key}"],
                 raise_exit_code=False,
-                log_title=f"Git: Get {user_type} {key}",
+                log_title=f"Git: Get {typ} {key}",
                 stack_up=1,
             )
             if result.code == 0:
@@ -525,7 +530,7 @@ class Git:
                 user.append(None)
             else:
                 raise _exception.GitTidyOperationError(
-                    f"Failed to get {user_type}.{key}")
+                    f"Failed to get {typ}.{key}")
         return tuple(user)
 
     def fetch_remote_branches_by_pattern(
@@ -875,37 +880,4 @@ class Git:
             log_level_exit_code=self._shell_runner.log_level_stderr,
             stack_up=1,
         )
-        return
-
-    @_contextmanager
-    def _temporary_credentials(self):
-        if not self._author_persistent:
-            self.set_user(
-                username=self._author_username,
-                email=self._author_email,
-                user_type="author",
-                scope=self._author_scope
-            )
-        if not self._committer_persistent:
-            self.set_user(
-                username=self._committer_username,
-                email=self._committer_email,
-                user_type="committer",
-                scope=self._committer_scope,
-            )
-        yield
-        if not self._author_persistent:
-            self.set_user(
-                username=self._original_author_username,
-                email=self._original_author_email,
-                user_type="author",
-                scope=self._author_scope
-            )
-        if not self._committer_persistent:
-            self.set_user(
-                username=self._original_committer_username,
-                email=self._original_committer_email,
-                user_type="committer",
-                scope=self._committer_scope,
-            )
         return
