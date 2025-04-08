@@ -808,6 +808,33 @@ class Git:
                             return repo_name
         return
 
+    def get_remote_default_branch(
+        self,
+        remote_name: str = "origin",
+    ) -> str | None:
+        """Get the default branch of the remote repository.
+
+        Parameters
+        ----------
+        remote_name : str, default: "origin"
+            The name of the remote repository.
+
+        Returns
+        -------
+        str | None
+            The name of the default branch, or None if not found.
+        """
+        self.run_command(["remote", "set-head", remote_name, "--auto"], log_title="Git: Update Remote Head", stack_up=1)
+        prefix = f"refs/remotes/{remote_name}/"
+        result = self.run_command(
+            ["symbolic-ref", f"{prefix}HEAD"],
+            log_title="Git: Get Remote Default Branch",
+            stack_up=1,
+        ).out
+        if not result:
+            return None
+        return result.removeprefix(prefix)
+
     def check_gitattributes(self) -> bool:
         command = ["sh", "-c", "git ls-files | git check-attr -a --stdin | grep 'text: auto'"]
         result = _pyshellman.run(
