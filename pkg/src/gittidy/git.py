@@ -847,17 +847,18 @@ class Git:
         )
         return not result.out
 
-    def file_at_hash(self, commit_hash: str, path: str | _Path, raise_missing: bool = True) -> str | None:
+    def file_at_ref(self, ref: str, path: str | _Path, raise_missing: bool = True) -> str | None:
+        """Get the content of a file at a specific Git reference."""
         result = self.run_command(
-            ["show", f"{commit_hash}:{path}"],
-            log_title="Git: Get File at Commit",
+            ["show", f"{ref}:{path}"],
+            log_title="Git: Get File at Reference",
             raise_exit_code=raise_missing,
             stack_up=1,
         )
         if result.err or result.code != 0:
             if raise_missing:
                 raise _exception.GitTidyOperationError(
-                    f"Failed to get file '{path}' at commit '{commit_hash}'."
+                    f"Failed to get file '{path}' at reference '{ref}'."
                 )
             return
         return result.out
