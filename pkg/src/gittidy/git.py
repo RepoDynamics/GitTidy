@@ -372,6 +372,21 @@ class Git:
             out.setdefault(f"{out_key}_to", []).append(paths[1])
         return out
 
+    def commit_hash(self, ref: str) -> str | None:
+        """Get the commit hash of a specific reference.
+
+        Parameters:
+        - ref (str): The reference to get the commit hash from.
+
+        Returns:
+        - str: The commit hash.
+        """
+        return self.run_command(
+            ["rev-parse", ref],
+            log_title="Git: Get Commit Hash",
+            stack_up=1,
+        ).out
+
     def commit_hash_normal(self, parent: int = 0) -> str | None:
         """
         Get the commit hash of the current commit.
